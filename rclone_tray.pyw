@@ -61,6 +61,7 @@ class Mount:
     drive: str
     volname: str
     extra: list[str] = field(default_factory=list)
+    conn: dict | None = None
     proc: subprocess.Popen | None = None
 
     @property
@@ -68,14 +69,19 @@ class Mount:
         return f"{self.drive}:\\"
 
     def to_dict(self) -> dict:
-        return {"name": self.name, "remote": self.remote, "drive": self.drive,
-                "volname": self.volname, "extra": list(self.extra)}
+        d = {"name": self.name, "remote": self.remote, "drive": self.drive,
+             "volname": self.volname, "extra": list(self.extra)}
+        if self.conn:
+            d["conn"] = dict(self.conn)
+        return d
 
     @classmethod
     def from_dict(cls, d: dict) -> "Mount":
+        conn = d.get("conn")
         return cls(name=d["name"], remote=d["remote"], drive=d["drive"].upper(),
                    volname=d.get("volname", d["name"]),
-                   extra=list(d.get("extra", [])))
+                   extra=list(d.get("extra", [])),
+                   conn=dict(conn) if isinstance(conn, dict) else None)
 
 
 # ---------- config + mount list ----------
@@ -1046,6 +1052,53 @@ def already_running() -> bool:
     return False
 
 
+def _bare_remote_name(remote: str) -> str:
+    """'iotstack:/data' -> 'iotstack'."""
+    return remote.split(":", 1)[0].strip()
+
+
+def materialize_missing_remotes() -> None:
+    """For each mount that carries a `conn` block, create the rclone.conf
+    section if it isn't already present. Secrets (password / key passphrase)
+    are never fabricated — if a remote needs one, the user adds it via the
+    SFTP dialog after the section exists.
+    """
+    existing = {n.rstrip(":") for n in get_rclone_remotes()}
+    for m in list(mounts):
+        if not m.conn:
+            continue
+        name = _bare_remote_name(m.remote)
+        if not name or name in existing:
+            continue
+        rtype = str(m.conn.get("type", "")).lower()
+        if rtype != "sftp":
+            log(f"{m.name}: skipping materialize (type={rtype!r} not supported)")
+            continue
+        host = str(m.conn.get("host", ""))
+        user = str(m.conn.get("user", ""))
+        port = str(m.conn.get("port", "22"))
+        key_file = str(m.conn.get("key_file", ""))
+        if not host or not user:
+            log(f"{m.name}: skipping materialize (host/user missing in conn)")
+            continue
+        ok, err = rclone_config_save_sftp(name=name, host=host, port=port,
+                                          user=user, key_file=key_file)
+        if ok:
+            log(f"{m.name}: created rclone remote '{name}' from config.json")
+            existing.add(name)
+        else:
+            log(f"{m.name}: failed to create remote '{name}': {err}")
+
+
+def _first_run_needed() -> bool:
+    """True when the user has no mounts configured or no rclone remotes yet."""
+    if not mounts:
+        return True
+    if not get_rclone_remotes():
+        return True
+    return False
+
+
 def main() -> None:
     log(f"=== rclone_tray starting (pid {os.getpid()}) ===")
     if already_running():
@@ -1053,6 +1106,8 @@ def main() -> None:
         return
 
     try:
+        materialize_missing_remotes()
+
         for m in list(mounts):
             if is_autostart(m) and not is_mounted(m):
                 threading.Thread(target=mount, args=(m,), daemon=True).start()
@@ -1064,6 +1119,10 @@ def main() -> None:
         icon.menu = build_menu(icon)
         threading.Thread(target=menu_refresh_loop, args=(stop, icon),
                          daemon=True).start()
+
+        if _first_run_needed():
+            log("first-run: no mounts or no remotes — opening Manage mounts")
+            threading.Timer(1.5, lambda: open_manager(icon)).start()
         try:
             icon.run()
         finally:

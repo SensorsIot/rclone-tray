@@ -105,6 +105,7 @@ its own files.
 | `drive` | str | Single letter A–Z (no colon) |
 | `volname` | str | Windows volume label |
 | `extra` | list[str] | Extra args passed to `rclone mount` |
+| `conn` | dict \| None | Optional non-secret remote params for auto-materialization into `rclone.conf` (see §5.9). |
 | `proc` | Popen \| None | Tracked child process (runtime only) |
 
 ### 4.2 `config.json` (persisted)
@@ -112,8 +113,21 @@ its own files.
 ```json
 {
   "autostart":   { "<mount-name>": true, ... },
-  "mounts":      [ { name, remote, drive, volname, extra }, ... ],
+  "mounts":      [ { name, remote, drive, volname, extra, conn? }, ... ],
   "manager_pos": "+x+y"
+}
+```
+
+Optional `conn` shape (non-secret only; passwords/passphrases are never
+stored here):
+
+```json
+"conn": {
+  "type":     "sftp",
+  "host":     "192.168.1.10",
+  "port":     22,
+  "user":     "pi",
+  "key_file": "C:\\Users\\me\\.ssh\\id_ed25519"
 }
 ```
 
@@ -241,6 +255,37 @@ which handles password / passphrase obscuration.
 - **FR-INST-1b** The Desktop shortcut target directory is resolved
   via `[Environment]::GetFolderPath('Desktop')` so OneDrive-redirected
   Desktops work; `%USERPROFILE%\Desktop` is a fallback only.
+- **FR-INST-5** After registering the Scheduled Task, `install.bat`
+  runs a verification pass (tray program present, rclone on PATH
+  or in `%LOCALAPPDATA%\Programs\rclone`, `WinFsp.Launcher` service
+  registered, `RcloneTray` task registered, `rclone.conf` present)
+  and only then launches the tray via `start "" "%PYW%" "%TARGET%"`.
+
+### 5.9 Config-driven remote materialization
+
+- **FR-MAT-1** On startup, after reading `config.json`, the tray
+  iterates mounts and, for any mount whose `conn` block is present
+  and whose `remote` bare name is absent from `rclone listremotes`,
+  creates the rclone.conf section via
+  `rclone config create <name> <type> …`.
+- **FR-MAT-2** Only non-secret fields (host, port, user, key_file
+  path) are materialized from `config.json`. Passwords and
+  key-file passphrases are never read from `config.json`; if a
+  remote needs one, the user enters it once via the SFTP dialog
+  and rclone stores it obscured in `rclone.conf`.
+- **FR-MAT-3** For remote types the tray does not understand
+  (anything other than `sftp` in v1), materialization is skipped
+  with a log entry; the user configures that remote via
+  `rclone config` or the existing console hand-off.
+- **FR-MAT-4** If `conn` is absent the mount is treated as today:
+  it must refer to a remote that already exists in `rclone.conf`.
+
+### 5.10 First-run dialog
+
+- **FR-FIRST-1** If, at startup, `config.json` has no mounts OR
+  `rclone listremotes` returns nothing, the tray schedules
+  `open_manager()` roughly 1.5 s after the icon appears so the
+  user lands directly in the mount-management window.
 - **FR-INST-2** Runtime data (`config.json`, `rclone_tray.log`) lives
   in a separate directory `%LOCALAPPDATA%\rclone-tray\`, created on
   first launch.

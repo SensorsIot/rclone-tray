@@ -69,13 +69,47 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command ^
 if errorlevel 1 goto :err
 
 echo.
+echo === Verifying install ===
+set "VERIFY_FAIL="
+if not exist "%INSTALL_DIR%\rclone_tray.pyw" (
+    echo VERIFY: tray program missing at %INSTALL_DIR%\rclone_tray.pyw
+    set "VERIFY_FAIL=1"
+)
+where rclone >nul 2>&1
+if errorlevel 1 if not exist "%LOCALAPPDATA%\Programs\rclone\rclone.exe" (
+    echo VERIFY: rclone.exe not found on PATH or in %%LOCALAPPDATA%%\Programs\rclone
+    set "VERIFY_FAIL=1"
+)
+powershell -NoProfile -Command "if (-not (Get-Service -Name 'WinFsp.Launcher' -ErrorAction SilentlyContinue)) { exit 1 }"
+if errorlevel 1 (
+    echo VERIFY: WinFsp.Launcher service not found
+    set "VERIFY_FAIL=1"
+)
+schtasks /query /tn RcloneTray >nul 2>&1
+if errorlevel 1 (
+    echo VERIFY: Scheduled Task 'RcloneTray' missing
+    set "VERIFY_FAIL=1"
+)
+if not exist "%APPDATA%\rclone\rclone.conf" (
+    echo VERIFY: rclone.conf missing at %APPDATA%\rclone\rclone.conf
+    set "VERIFY_FAIL=1"
+)
+if defined VERIFY_FAIL goto :err
+echo All checks passed.
+
+echo.
+echo === Launching Rclone Tray ===
+start "" "%PYW%" "%INSTALL_DIR%\rclone_tray.pyw"
+
+echo.
 echo Installed.
 echo   Program        : %INSTALL_DIR%
 echo   Data           : %DATA_DIR%
 echo   Autostart task : RcloneTray  (Task Scheduler -> Task Scheduler Library)
 echo.
-echo Launch "Rclone Tray" from the Desktop. The app will autostart at next login
-echo via the Scheduled Task (no Startup-folder throttle).
+echo The tray icon is starting now. On first run it will open the
+echo Manage Mounts window so you can add your remotes.
+echo At next login it will autostart via the Scheduled Task.
 exit /b 0
 
 :err

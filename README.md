@@ -77,13 +77,43 @@ manually if you want a full wipe.
 
 ## 🛠️ Usage
 
-1. Launch **Rclone Tray** from the Desktop.
+1. Launch **Rclone Tray** from the Desktop. On first run (no mounts
+   *or* no remotes yet) the **Manage Mounts** window opens
+   automatically.
 2. Right-click the tray icon (you may need to drag it out of the
    Windows 11 overflow `^` area to keep it visible).
 3. **Manage mounts… → Add** to define a mount. The *Remote* field has
    **New…** / **Edit…** buttons that pop up an SFTP-remote form so you
    can configure the underlying rclone remote without leaving the UI.
 4. For each mount you want at boot, toggle **Autostart + watchdog**.
+
+### Drop-in config
+
+If you already know your SFTP servers you can skip the dialog and
+pre-populate `%LOCALAPPDATA%\rclone-tray\config.json` directly. Each
+mount may carry an optional `conn` block with the non-secret fields
+(host / port / user / key_file) — the tray will create the
+corresponding `rclone.conf` section on next startup:
+
+```json
+{
+  "autostart": { "IOTstack": true },
+  "mounts": [
+    {
+      "name": "IOTstack", "remote": "iotstack:/", "drive": "I",
+      "volname": "IOTstack", "extra": [],
+      "conn": {
+        "type": "sftp", "host": "192.168.1.10", "port": 22,
+        "user": "pi", "key_file": "C:\\Users\\me\\.ssh\\id_ed25519"
+      }
+    }
+  ]
+}
+```
+
+Passwords and key passphrases are never read from `config.json` —
+enter those once via the SFTP dialog; rclone stores them obscured
+in `rclone.conf`.
 
 ### Tray menu
 
