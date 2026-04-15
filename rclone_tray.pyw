@@ -1,6 +1,7 @@
 """Rclone mount manager — system tray UI with autostart, watchdog, and management."""
 from __future__ import annotations
 
+import ctypes
 import json
 import os
 import shutil
@@ -10,6 +11,7 @@ import tempfile
 import threading
 import time
 import traceback
+import winreg
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -165,34 +167,141 @@ def is_mounted(m: Mount) -> bool:
 # ---------- mount/unmount ----------
 
 def kill_rclone_for(m: Mount) -> None:
+    drive = m.drive
+    log(f"{m.name}: kill_rclone_for(drive={drive}:) — starting")
+
     if m.proc is not None:
         try:
+            log(f"{m.name}: terminating tracked proc pid={m.proc.pid}")
             m.proc.terminate()
             try:
                 m.proc.wait(timeout=5)
             except subprocess.TimeoutExpired:
+                log(f"{m.name}: tracked proc didn't exit in 5s, killing")
                 m.proc.kill()
-        except OSError:
-            pass
+        except OSError as e:
+            log(f"{m.name}: terminate of tracked proc failed: {e}")
         m.proc = None
-    drive_arg = f"{m.drive}:"
+
+    drive_arg = f"{drive}:"
+    extra_killed = 0
     for p in psutil.process_iter(["name", "cmdline"]):
         try:
             if (p.info["name"] or "").lower() != "rclone.exe":
                 continue
             cmd = p.info["cmdline"] or []
             if drive_arg in cmd:
+                log(f"{m.name}: terminating extra rclone pid={p.pid} cmd={cmd}")
                 p.terminate()
                 try:
                     p.wait(timeout=5)
                 except psutil.TimeoutExpired:
                     p.kill()
+                extra_killed += 1
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             continue
-    for _ in range(10):
+    if extra_killed:
+        log(f"{m.name}: killed {extra_killed} extra rclone process(es)")
+
+    waited = 0
+    for _ in range(20):
         if not is_drive_present(m):
             break
         time.sleep(0.5)
+        waited += 0.5
+    log(f"{m.name}: drive {drive}: present after kill = "
+        f"{is_drive_present(m)} (waited {waited}s)")
+
+    _net_use_delete(m, drive)
+    _purge_mountpoints2(m)
+    _notify_shell_drive_removed(m, drive)
+
+
+def _net_use_delete(m: Mount, drive: str) -> None:
+    """Force-remove the WinFsp.Np network-drive registration so
+    Explorer doesn't keep showing the old letter."""
+    try:
+        r = subprocess.run(
+            ["net", "use", f"{drive}:", "/delete", "/yes"],
+            capture_output=True, text=True, timeout=10,
+            creationflags=CREATE_NO_WINDOW)
+        out = (r.stdout + r.stderr).strip().replace("\n", " | ")
+        log(f"{m.name}: net use {drive}: /delete -> rc={r.returncode} : {out}")
+    except (OSError, subprocess.TimeoutExpired) as e:
+        log(f"{m.name}: net use {drive}: /delete failed: {e}")
+
+
+def _purge_mountpoints2(m: Mount) -> None:
+    """Remove HKCU\\...\\MountPoints2\\##server#<volname>. Without this,
+    Explorer remembers past drive letters used for the volume and shows
+    a 'red X' ghost when the letter changes."""
+    if not m.volname:
+        return
+    base = r"Software\Microsoft\Windows\CurrentVersion\Explorer\MountPoints2"
+    name = f"##server#{m.volname}"
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, base, 0,
+                            winreg.KEY_ALL_ACCESS) as parent:
+            try:
+                _registry_delete_tree(parent, name)
+                log(f"{m.name}: purged MountPoints2\\{name}")
+            except FileNotFoundError:
+                pass
+    except OSError as e:
+        log(f"{m.name}: purge MountPoints2\\{name} failed: {e}")
+
+
+def _registry_delete_tree(parent_key, name: str) -> None:
+    with winreg.OpenKey(parent_key, name, 0, winreg.KEY_ALL_ACCESS) as sub:
+        children = []
+        i = 0
+        while True:
+            try:
+                children.append(winreg.EnumKey(sub, i))
+                i += 1
+            except OSError:
+                break
+        for c in children:
+            _registry_delete_tree(sub, c)
+    winreg.DeleteKey(parent_key, name)
+
+
+def _notify_shell_drive_removed(m: Mount, drive: str) -> None:
+    """Tell Explorer the drive letter is gone, to clear any cached
+    'red X' entry from This PC."""
+    try:
+        SHCNE_DRIVEREMOVED = 0x00000080
+        SHCNE_ASSOCCHANGED = 0x08000000
+        SHCNF_PATHW = 0x0005
+        path = ctypes.c_wchar_p(f"{drive}:\\")
+        ctypes.windll.shell32.SHChangeNotify(
+            SHCNE_DRIVEREMOVED, SHCNF_PATHW, path, None)
+        ctypes.windll.shell32.SHChangeNotify(
+            SHCNE_ASSOCCHANGED, 0, None, None)
+        log(f"{m.name}: SHCNE_DRIVEREMOVED sent for {drive}:")
+    except Exception as e:
+        log(f"{m.name}: SHCNE_DRIVEREMOVED failed: {e}")
+
+
+def _rclone_log_path(m: Mount) -> Path:
+    safe = "".join(c if c.isalnum() else "_" for c in m.name)
+    return DATA_DIR / f"rclone-{safe}.log"
+
+
+def _verify_mount(m: Mount) -> None:
+    """Run a few seconds after Popen to detect an rclone process that
+    died on startup or never produced a drive letter."""
+    time.sleep(4)
+    proc = m.proc
+    if proc is None:
+        return
+    rc = proc.poll()
+    if rc is not None:
+        log(f"{m.name}: rclone exited rc={rc} — see {_rclone_log_path(m).name}")
+        return
+    if not is_drive_present(m):
+        log(f"{m.name}: rclone alive but {m.drive}: not present after 4s "
+            f"— see {_rclone_log_path(m).name}")
 
 
 def mount(m: Mount) -> None:
@@ -204,11 +313,18 @@ def mount(m: Mount) -> None:
                *COMMON_ARGS, "--volname", m.volname, *m.extra]
         log(f"{m.name}: mounting → {' '.join(cmd)}")
         try:
+            errlog = open(_rclone_log_path(m), "ab")
+            errlog.write(
+                f"\n=== {time.strftime('%Y-%m-%d %H:%M:%S')} "
+                f"mount {m.remote} -> {m.drive}: ===\n".encode())
+            errlog.flush()
             m.proc = subprocess.Popen(
                 cmd, creationflags=CREATE_NO_WINDOW,
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                stdout=errlog, stderr=errlog)
         except OSError as e:
             log(f"{m.name}: mount failed: {e}")
+            return
+    threading.Thread(target=_verify_mount, args=(m,), daemon=True).start()
 
 
 def unmount(m: Mount) -> None:
@@ -718,14 +834,18 @@ def edit_mount_dialog(parent, existing: Mount | None, on_saved) -> None:
                                          parent=dlg)
                     return
 
+            remount_after = False
             if existing:
-                if is_mounted(existing) and (existing.drive != drive or existing.remote != remote):
+                changed = (existing.drive != drive or existing.remote != remote
+                           or existing.volname != volname or existing.extra != extra)
+                if is_mounted(existing) and changed:
                     if not messagebox.askyesno(
                             "Remount required",
                             f"'{existing.name}' is mounted. Unmount and remount with new settings?",
                             parent=dlg):
                         return
                     unmount(existing)
+                    remount_after = True
                 old_name = existing.name
                 existing.name = name
                 existing.remote = remote
@@ -734,11 +854,15 @@ def edit_mount_dialog(parent, existing: Mount | None, on_saved) -> None:
                 existing.extra = extra
                 if old_name != name and old_name in config["autostart"]:
                     config["autostart"][name] = config["autostart"].pop(old_name)
+                target = existing
             else:
-                mounts.append(Mount(name=name, remote=remote, drive=drive,
-                                    volname=volname, extra=extra))
+                target = Mount(name=name, remote=remote, drive=drive,
+                               volname=volname, extra=extra)
+                mounts.append(target)
             persist_mounts()
 
+        if remount_after:
+            threading.Thread(target=mount, args=(target,), daemon=True).start()
         on_saved()
         dlg.destroy()
 
