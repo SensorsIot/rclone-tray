@@ -36,11 +36,13 @@ graphical form — no `rclone config` wizardry required for the common case.
 | Component | Notes |
 |-----------|-------|
 | Windows 10 / 11 | x64 |
-| Python 3.11+ | `pythonw.exe` is used so no console window appears |
-| [rclone](https://rclone.org/downloads/) | On `PATH`, or installed via `winget install Rclone.Rclone` |
-| [WinFsp](https://winfsp.dev/) | rclone needs this for `mount` |
+| Python 3.11+ | `pythonw.exe` is used so no console window appears — **must be pre-installed** |
+| [rclone](https://rclone.org/downloads/) | Installed automatically by `install.bat` if missing |
+| [WinFsp](https://winfsp.dev/) | Installed automatically by `install.bat` if missing (UAC prompt) |
 
-Python deps (`pystray`, `pillow`, `psutil`) are installed by `install.bat`.
+Python itself is the only prerequisite you need to install yourself.
+Python deps (`pystray`, `pillow`, `psutil`), rclone, and WinFsp are all
+handled by `install.bat`.
 
 ---
 
@@ -52,12 +54,17 @@ cd rclone-tray
 install.bat
 ```
 
-`install.bat` does four things:
+`install.bat` does five things:
 
-1. `pip install --user pystray pillow psutil`
-2. Copies the program to `%LOCALAPPDATA%\Programs\rclone-tray\`
-3. Creates the data directory `%LOCALAPPDATA%\rclone-tray\`
-4. Creates a **Desktop** shortcut and registers a per-user **Scheduled
+1. Runs `install-prereqs.ps1`, which installs **WinFsp** (latest MSI
+   from GitHub, elevated via UAC) and **rclone** (official zip,
+   extracted to `%LOCALAPPDATA%\Programs\rclone` and added to user
+   PATH) — each only if not already present
+2. `pip install --user pystray pillow psutil`
+3. Copies the program to `%LOCALAPPDATA%\Programs\rclone-tray\`
+4. Creates the data directory `%LOCALAPPDATA%\rclone-tray\`
+5. Creates a **Desktop** shortcut (OneDrive-redirected Desktops are
+   resolved automatically) and registers a per-user **Scheduled
    Task** `RcloneTray` (trigger: *At log on*) so the tray launches
    within seconds of every login — without the multi-minute throttle
    that affects Startup-folder items
@@ -99,7 +106,8 @@ manually if you want a full wipe.
 | File | Purpose |
 |------|---------|
 | `rclone_tray.pyw` | The application |
-| `install.bat` | Installer (copies to `%LOCALAPPDATA%\Programs\rclone-tray\`, creates shortcuts) |
+| `install.bat` | Installer (installs prereqs, copies to `%LOCALAPPDATA%\Programs\rclone-tray\`, creates shortcuts) |
+| `install-prereqs.ps1` | Helper called by the installer to install WinFsp and rclone if missing |
 | `uninstall.bat` | Removes program + shortcuts (keeps your data) |
 | `%LOCALAPPDATA%\rclone-tray\config.json` | Generated. Mounts, autostart toggles, last window position |
 | `%LOCALAPPDATA%\rclone-tray\rclone_tray.log` | Generated. Activity / errors |

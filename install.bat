@@ -4,7 +4,9 @@ setlocal
 set "INSTALL_DIR=%LOCALAPPDATA%\Programs\rclone-tray"
 set "DATA_DIR=%LOCALAPPDATA%\rclone-tray"
 set "STARTUP=%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup"
-set "DESKTOP=%USERPROFILE%\Desktop"
+for /f "usebackq delims=" %%D in (`powershell -NoProfile -Command "[Environment]::GetFolderPath('Desktop')"`) do set "DESKTOP=%%D"
+if not exist "%DESKTOP%" set "DESKTOP=%USERPROFILE%\Desktop"
+if not exist "%DESKTOP%" mkdir "%DESKTOP%"
 
 set "PYW=%LOCALAPPDATA%\Programs\Python\Python311\pythonw.exe"
 if not exist "%PYW%" set "PYW=%LOCALAPPDATA%\Programs\Python\Python312\pythonw.exe"
@@ -14,6 +16,10 @@ if not exist "%PYW%" (
     echo Install Python 3.11+ from python.org first.
     exit /b 1
 )
+
+echo === Installing prerequisites (WinFsp, rclone) ===
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0install-prereqs.ps1"
+if errorlevel 1 goto :err
 
 echo === Installing Python dependencies ===
 python -m pip install --user --upgrade pystray pillow psutil

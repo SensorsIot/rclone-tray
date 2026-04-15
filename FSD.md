@@ -7,7 +7,7 @@
 | **Document ID** | rclone-tray-FSD-v1 |
 | **Platform** | Windows 10 / 11 (x64) |
 | **Runtime** | Python 3.11+, `pythonw.exe` (no console) |
-| **External deps** | rclone, WinFsp, `pystray`, `pillow`, `psutil` |
+| **External deps** | rclone, WinFsp, `pystray`, `pillow`, `psutil` (rclone + WinFsp auto-installed by `install.bat`) |
 | **Install location** | `%LOCALAPPDATA%\Programs\rclone-tray\` (per-user, no admin) |
 | **Data location** | `%LOCALAPPDATA%\rclone-tray\` (`config.json`, `rclone_tray.log`) |
 | **Lock file** | `%TEMP%\rclone_tray.lock` |
@@ -216,6 +216,26 @@ which handles password / passphrase obscuration.
 - **FR-INST-1** Program files (the `.pyw`, README, LICENSE, FSD,
   uninstall.bat) are copied by `install.bat` to
   `%LOCALAPPDATA%\Programs\rclone-tray\`.
+- **FR-INST-1a** Before copying program files, `install.bat` invokes
+  `install-prereqs.ps1`, which installs missing non-Python
+  prerequisites without requiring `winget`:
+  - **WinFsp**: detected via `HKLM:\Software\WinFsp` (and the
+    WOW6432Node view) or the install directory; if absent, the
+    latest MSI asset is fetched from the `winfsp/winfsp` GitHub
+    releases API and installed via `msiexec /i ... /qn /norestart`
+    with UAC elevation (`Start-Process -Verb RunAs`). Exit codes
+    `0` and `3010` (reboot-required) are accepted.
+  - **rclone**: detected via `Get-Command rclone` or presence at
+    `%LOCALAPPDATA%\Programs\rclone\rclone.exe`; if absent, the
+    official `rclone-current-windows-amd64.zip` is downloaded,
+    extracted, `rclone.exe` copied to
+    `%LOCALAPPDATA%\Programs\rclone\`, and that directory appended
+    to the user `PATH` (persistent via `[Environment]::SetEnvironmentVariable`).
+  - Python is not auto-installed — the script fails with instructions
+    if `pythonw.exe` is absent.
+- **FR-INST-1b** The Desktop shortcut target directory is resolved
+  via `[Environment]::GetFolderPath('Desktop')` so OneDrive-redirected
+  Desktops work; `%USERPROFILE%\Desktop` is a fallback only.
 - **FR-INST-2** Runtime data (`config.json`, `rclone_tray.log`) lives
   in a separate directory `%LOCALAPPDATA%\rclone-tray\`, created on
   first launch.
