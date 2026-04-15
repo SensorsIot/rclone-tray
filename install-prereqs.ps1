@@ -62,4 +62,31 @@ if (-not (Get-Command rclone -ErrorAction SilentlyContinue)) {
     $env:PATH = "$rcloneDir;$env:PATH"
 }
 
+# --- rclone.conf template ---
+$rcloneConfDir  = Join-Path $env:APPDATA 'rclone'
+$rcloneConfFile = Join-Path $rcloneConfDir 'rclone.conf'
+if (-not (Test-Path $rcloneConfFile)) {
+    New-Item -ItemType Directory -Force -Path $rcloneConfDir | Out-Null
+    $template = @"
+# rclone configuration file
+#
+# Add remotes here, or use rclone-tray's "Manage mounts... -> New... / Edit..."
+# dialog (SFTP remotes) or run `rclone config` from a shell (all remote types)
+# to have rclone fill this file in for you.
+#
+# Example SFTP section (passwords/passphrases are obscured by rclone, never
+# stored in plaintext — let rclone-tray or `rclone config` write them):
+#
+# [myserver]
+# type = sftp
+# host = 192.168.1.10
+# user = pi
+# key_file = C:\Users\you\.ssh\id_ed25519
+"@
+    Set-Content -Path $rcloneConfFile -Value $template -Encoding ASCII
+    Write-Host "Created template $rcloneConfFile."
+} else {
+    Write-Host "rclone.conf already exists at $rcloneConfFile."
+}
+
 Write-Host "Prerequisites ready."

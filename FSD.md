@@ -233,6 +233,11 @@ which handles password / passphrase obscuration.
     to the user `PATH` (persistent via `[Environment]::SetEnvironmentVariable`).
   - Python is not auto-installed — the script fails with instructions
     if `pythonw.exe` is absent.
+  - **rclone.conf template**: if `%APPDATA%\rclone\rclone.conf` does
+    not exist, the script creates an empty file containing a header
+    comment and an example SFTP section. This gives the tray and
+    rclone a landing file (silencing the "Config file not found"
+    notice) without inventing any remotes.
 - **FR-INST-1b** The Desktop shortcut target directory is resolved
   via `[Environment]::GetFolderPath('Desktop')` so OneDrive-redirected
   Desktops work; `%USERPROFILE%\Desktop` is a fallback only.
