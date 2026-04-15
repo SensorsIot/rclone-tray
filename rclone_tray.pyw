@@ -1057,11 +1057,28 @@ def _bare_remote_name(remote: str) -> str:
     return remote.split(":", 1)[0].strip()
 
 
+def _expand_path(p: str) -> str:
+    """Expand %USERPROFILE%, $HOME, ~ etc. so paths are machine-portable."""
+    return os.path.expandvars(os.path.expanduser(p)) if p else p
+
+
+def _conn_secret_field(conn: dict) -> str | None:
+    """Return the rclone field name ('pass' / 'key_file_pass') for the secret
+    this remote needs, or None if no secret is needed.
+    """
+    auth = str(conn.get("auth", "")).lower()
+    if auth == "password":
+        return "pass"
+    if auth in ("key_passphrase", "passphrase"):
+        return "key_file_pass"
+    return None  # 'key' or unset -> no secret required
+
+
 def materialize_missing_remotes() -> None:
     """For each mount that carries a `conn` block, create the rclone.conf
     section if it isn't already present. Secrets (password / key passphrase)
-    are never fabricated — if a remote needs one, the user adds it via the
-    SFTP dialog after the section exists.
+    are never fabricated — if a remote declares `auth` = password /
+    key_passphrase, those values are prompted for separately on first run.
     """
     existing = {n.rstrip(":") for n in get_rclone_remotes()}
     for m in list(mounts):
@@ -1077,7 +1094,7 @@ def materialize_missing_remotes() -> None:
         host = str(m.conn.get("host", ""))
         user = str(m.conn.get("user", ""))
         port = str(m.conn.get("port", "22"))
-        key_file = str(m.conn.get("key_file", ""))
+        key_file = _expand_path(str(m.conn.get("key_file", "")))
         if not host or not user:
             log(f"{m.name}: skipping materialize (host/user missing in conn)")
             continue
@@ -1088,6 +1105,103 @@ def materialize_missing_remotes() -> None:
             existing.add(name)
         else:
             log(f"{m.name}: failed to create remote '{name}': {err}")
+
+
+def mounts_needing_secrets() -> list[tuple[Mount, str]]:
+    """[(mount, rclone-field-name)] for each mount whose materialized remote
+    still lacks the secret that its conn block declares it needs.
+    """
+    out: list[tuple[Mount, str]] = []
+    existing = {n.rstrip(":") for n in get_rclone_remotes()}
+    for m in list(mounts):
+        if not m.conn:
+            continue
+        field = _conn_secret_field(m.conn)
+        if not field:
+            continue
+        name = _bare_remote_name(m.remote)
+        if name not in existing:
+            continue  # section never materialized; not our problem here
+        current = rclone_config_show(name)
+        if not current.get(field):
+            out.append((m, field))
+    return out
+
+
+def prompt_secrets_blocking(pending: list[tuple[Mount, str]]) -> None:
+    """Open a single modal window listing every remote missing a secret.
+    The window cannot be closed until all fields are filled and saved.
+    After save, autostart mounts for the affected remotes are kicked off.
+    """
+    import tkinter as tk
+    from tkinter import ttk, messagebox
+
+    root = tk.Tk()
+    root.title("rclone-tray — credentials required")
+    try:
+        root.attributes("-topmost", True)
+    except tk.TclError:
+        pass
+    root.protocol("WM_DELETE_WINDOW", lambda: None)  # disable X button
+    root.resizable(False, False)
+
+    header = ttk.Label(
+        root,
+        text=("Enter credentials for the remotes below. "
+              "This window stays open until every field is filled."),
+        wraplength=520, justify="left",
+    )
+    header.grid(row=0, column=0, columnspan=2, padx=12, pady=(12, 6), sticky="w")
+
+    entries: list[tuple[Mount, str, "tk.Entry"]] = []
+    for i, (m, field) in enumerate(pending, start=1):
+        remote_name = _bare_remote_name(m.remote)
+        label = "password" if field == "pass" else "key passphrase"
+        ttk.Label(root, text=f"{m.name}  ({remote_name}) — {label}:") \
+            .grid(row=i, column=0, sticky="e", padx=(12, 6), pady=3)
+        e = ttk.Entry(root, show="\u2022", width=32)
+        e.grid(row=i, column=1, sticky="w", padx=(0, 12), pady=3)
+        entries.append((m, field, e))
+    if entries:
+        entries[0][2].focus_set()
+
+    status = ttk.Label(root, text="", foreground="red")
+    status.grid(row=len(pending) + 1, column=0, columnspan=2,
+                padx=12, pady=(4, 0), sticky="w")
+
+    def on_save() -> None:
+        for _, _, e in entries:
+            if not e.get():
+                status.configure(text="All fields must be filled.")
+                return
+        status.configure(text="Saving…", foreground="black")
+        root.update_idletasks()
+        failed: list[str] = []
+        for m, field, e in entries:
+            name = _bare_remote_name(m.remote)
+            args = [RCLONE_EXE, "config", "update", name, field, e.get(),
+                    "--obscure"]
+            try:
+                r = subprocess.run(args, capture_output=True, text=True,
+                                   timeout=15, creationflags=CREATE_NO_WINDOW)
+                if r.returncode != 0:
+                    failed.append(f"{m.name}: {(r.stderr or r.stdout).strip()}")
+            except (OSError, subprocess.TimeoutExpired) as ex:
+                failed.append(f"{m.name}: {ex}")
+        if failed:
+            messagebox.showerror("Save failed", "\n".join(failed), parent=root)
+            status.configure(text="One or more saves failed — fix and retry.",
+                             foreground="red")
+            return
+        for m, _, _ in entries:
+            if is_autostart(m) and not is_mounted(m):
+                threading.Thread(target=mount, args=(m,), daemon=True).start()
+        root.destroy()
+
+    save_btn = ttk.Button(root, text="Save and start mounts", command=on_save)
+    save_btn.grid(row=len(pending) + 2, column=0, columnspan=2, pady=(8, 12))
+
+    root.mainloop()
 
 
 def _first_run_needed() -> bool:
@@ -1120,7 +1234,13 @@ def main() -> None:
         threading.Thread(target=menu_refresh_loop, args=(stop, icon),
                          daemon=True).start()
 
-        if _first_run_needed():
+        pending_secrets = mounts_needing_secrets()
+        if pending_secrets:
+            names = ", ".join(m.name for m, _ in pending_secrets)
+            log(f"first-run: secrets needed for {names}")
+            threading.Thread(target=prompt_secrets_blocking,
+                             args=(pending_secrets,), daemon=True).start()
+        elif _first_run_needed():
             log("first-run: no mounts or no remotes — opening Manage mounts")
             threading.Timer(1.5, lambda: open_manager(icon)).start()
         try:

@@ -270,9 +270,14 @@ which handles password / passphrase obscuration.
   `rclone config create <name> <type> …`.
 - **FR-MAT-2** Only non-secret fields (host, port, user, key_file
   path) are materialized from `config.json`. Passwords and
-  key-file passphrases are never read from `config.json`; if a
-  remote needs one, the user enters it once via the SFTP dialog
-  and rclone stores it obscured in `rclone.conf`.
+  key-file passphrases are never read from `config.json`; if
+  `conn.auth` is `"password"` or `"key_passphrase"`, the value is
+  prompted for at first run (see §5.10) and rclone stores it
+  obscured in `rclone.conf`.
+- **FR-MAT-2a** `conn.key_file` paths pass through
+  `os.path.expandvars` + `expanduser` so `%USERPROFILE%\.ssh\id_ed25519`
+  or `~/.ssh/id_ed25519` are portable across machines — the same
+  `config.json` can be dropped on any user's machine.
 - **FR-MAT-3** For remote types the tray does not understand
   (anything other than `sftp` in v1), materialization is skipped
   with a log entry; the user configures that remote via
@@ -282,10 +287,17 @@ which handles password / passphrase obscuration.
 
 ### 5.10 First-run dialog
 
-- **FR-FIRST-1** If, at startup, `config.json` has no mounts OR
-  `rclone listremotes` returns nothing, the tray schedules
-  `open_manager()` roughly 1.5 s after the icon appears so the
-  user lands directly in the mount-management window.
+- **FR-FIRST-1** If any materialized remote is missing the secret
+  its `conn.auth` declares, the tray opens a single modal
+  credentials window listing every such remote. The window
+  intercepts `WM_DELETE_WINDOW` and cannot be closed until all
+  fields are filled; *Save and start mounts* writes each value via
+  `rclone config update <name> pass|key_file_pass <value> --obscure`
+  and then kicks off autostart mounts for the affected entries.
+- **FR-FIRST-2** If no secrets are missing but `config.json` has
+  no mounts OR `rclone listremotes` returns nothing, the tray
+  schedules `open_manager()` roughly 1.5 s after the icon appears
+  so the user lands directly in the mount-management window.
 - **FR-INST-2** Runtime data (`config.json`, `rclone_tray.log`) lives
   in a separate directory `%LOCALAPPDATA%\rclone-tray\`, created on
   first launch.

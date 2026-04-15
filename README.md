@@ -104,16 +104,32 @@ corresponding `rclone.conf` section on next startup:
       "volname": "IOTstack", "extra": [],
       "conn": {
         "type": "sftp", "host": "192.168.1.10", "port": 22,
-        "user": "pi", "key_file": "C:\\Users\\me\\.ssh\\id_ed25519"
+        "user": "pi",
+        "key_file": "%USERPROFILE%\\.ssh\\id_ed25519",
+        "auth": "key_passphrase"
       }
     }
   ]
 }
 ```
 
-Passwords and key passphrases are never read from `config.json` —
-enter those once via the SFTP dialog; rclone stores them obscured
-in `rclone.conf`.
+Paths in `key_file` honor `%USERPROFILE%`, `$HOME` and `~` so the
+same `config.json` is portable across machines.
+
+`conn.auth` tells the tray which secret (if any) it still needs to
+ask you for:
+
+| `auth` value      | What the tray prompts for              |
+|-------------------|----------------------------------------|
+| `"key"` / unset   | nothing — key-based auth, no passphrase |
+| `"password"`      | password (obscured by rclone)          |
+| `"key_passphrase"`| SSH key passphrase (obscured by rclone) |
+
+On first start (or any later start where a secret is still missing),
+the tray opens a single modal window listing every affected remote.
+**The window cannot be closed until all fields are filled.** After
+Save, the tray writes the values into `rclone.conf` via
+`rclone config update ... --obscure` and kicks off autostart mounts.
 
 ### Tray menu
 
