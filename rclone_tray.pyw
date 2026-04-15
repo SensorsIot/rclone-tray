@@ -168,49 +168,36 @@ def is_mounted(m: Mount) -> bool:
 
 def kill_rclone_for(m: Mount) -> None:
     drive = m.drive
-    log(f"{m.name}: kill_rclone_for(drive={drive}:) — starting")
-
     if m.proc is not None:
         try:
-            log(f"{m.name}: terminating tracked proc pid={m.proc.pid}")
             m.proc.terminate()
             try:
                 m.proc.wait(timeout=5)
             except subprocess.TimeoutExpired:
-                log(f"{m.name}: tracked proc didn't exit in 5s, killing")
                 m.proc.kill()
-        except OSError as e:
-            log(f"{m.name}: terminate of tracked proc failed: {e}")
+        except OSError:
+            pass
         m.proc = None
 
     drive_arg = f"{drive}:"
-    extra_killed = 0
     for p in psutil.process_iter(["name", "cmdline"]):
         try:
             if (p.info["name"] or "").lower() != "rclone.exe":
                 continue
             cmd = p.info["cmdline"] or []
             if drive_arg in cmd:
-                log(f"{m.name}: terminating extra rclone pid={p.pid} cmd={cmd}")
                 p.terminate()
                 try:
                     p.wait(timeout=5)
                 except psutil.TimeoutExpired:
                     p.kill()
-                extra_killed += 1
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             continue
-    if extra_killed:
-        log(f"{m.name}: killed {extra_killed} extra rclone process(es)")
 
-    waited = 0
     for _ in range(20):
         if not is_drive_present(m):
             break
         time.sleep(0.5)
-        waited += 0.5
-    log(f"{m.name}: drive {drive}: present after kill = "
-        f"{is_drive_present(m)} (waited {waited}s)")
 
     _net_use_delete(m, drive)
     _purge_mountpoints2(m)
@@ -218,17 +205,14 @@ def kill_rclone_for(m: Mount) -> None:
 
 
 def _net_use_delete(m: Mount, drive: str) -> None:
-    """Force-remove the WinFsp.Np network-drive registration so
-    Explorer doesn't keep showing the old letter."""
+    """Force-remove the WinFsp.Np network-drive registration."""
     try:
-        r = subprocess.run(
+        subprocess.run(
             ["net", "use", f"{drive}:", "/delete", "/yes"],
             capture_output=True, text=True, timeout=10,
             creationflags=CREATE_NO_WINDOW)
-        out = (r.stdout + r.stderr).strip().replace("\n", " | ")
-        log(f"{m.name}: net use {drive}: /delete -> rc={r.returncode} : {out}")
-    except (OSError, subprocess.TimeoutExpired) as e:
-        log(f"{m.name}: net use {drive}: /delete failed: {e}")
+    except (OSError, subprocess.TimeoutExpired):
+        pass
 
 
 def _purge_mountpoints2(m: Mount) -> None:
@@ -244,11 +228,10 @@ def _purge_mountpoints2(m: Mount) -> None:
                             winreg.KEY_ALL_ACCESS) as parent:
             try:
                 _registry_delete_tree(parent, name)
-                log(f"{m.name}: purged MountPoints2\\{name}")
             except FileNotFoundError:
                 pass
-    except OSError as e:
-        log(f"{m.name}: purge MountPoints2\\{name} failed: {e}")
+    except OSError:
+        pass
 
 
 def _registry_delete_tree(parent_key, name: str) -> None:
@@ -278,9 +261,8 @@ def _notify_shell_drive_removed(m: Mount, drive: str) -> None:
             SHCNE_DRIVEREMOVED, SHCNF_PATHW, path, None)
         ctypes.windll.shell32.SHChangeNotify(
             SHCNE_ASSOCCHANGED, 0, None, None)
-        log(f"{m.name}: SHCNE_DRIVEREMOVED sent for {drive}:")
-    except Exception as e:
-        log(f"{m.name}: SHCNE_DRIVEREMOVED failed: {e}")
+    except Exception:
+        pass
 
 
 def _rclone_log_path(m: Mount) -> Path:
@@ -597,7 +579,6 @@ def open_manager(icon: Icon) -> None:
 
 
 def _manager_thread(icon: Icon) -> None:
-    log("manager thread starting")
     try:
         import tkinter as tk
         from tkinter import ttk, messagebox
@@ -608,10 +589,9 @@ def _manager_thread(icon: Icon) -> None:
     try:
         _manager_main(icon, tk, ttk, messagebox)
     except Exception:
-        log("manager thread CRASH:\n" + traceback.format_exc())
+        log("manage window crashed:\n" + traceback.format_exc())
     finally:
         _manager_open.clear()
-        log("manager thread done")
 
 
 def _manager_main(icon, tk, ttk, messagebox) -> None:
@@ -711,9 +691,7 @@ def _manager_main(icon, tk, ttk, messagebox) -> None:
     root.attributes("-topmost", True)
     root.after(200, lambda: root.attributes("-topmost", False))
     root.focus_force()
-    log("manager mainloop entering")
     root.mainloop()
-    log("manager mainloop exited")
 
 
 def edit_mount_dialog(parent, existing: Mount | None, on_saved) -> None:
@@ -1087,7 +1065,6 @@ def main() -> None:
         threading.Thread(target=menu_refresh_loop, args=(stop, icon),
                          daemon=True).start()
 
-        log("about to call icon.run()")
         try:
             icon.run()
         finally:
