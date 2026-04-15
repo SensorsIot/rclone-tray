@@ -1,9 +1,6 @@
 """Rclone mount manager — system tray UI with autostart, watchdog, and management."""
 from __future__ import annotations
 
-import time
-_T_START = time.perf_counter()  # measured before heavier imports
-
 import ctypes
 import json
 import os
@@ -12,6 +9,7 @@ import string
 import subprocess
 import tempfile
 import threading
+import time
 import traceback
 import winreg
 from dataclasses import dataclass, field
@@ -20,8 +18,6 @@ from pathlib import Path
 import psutil
 from PIL import Image, ImageDraw
 from pystray import Icon, Menu, MenuItem
-
-_T_IMPORTS_DONE = time.perf_counter()
 
 LOCK_FILE = Path(tempfile.gettempdir()) / "rclone_tray.lock"
 
@@ -91,10 +87,6 @@ def log(msg: str) -> None:
             f.write(line)
     except OSError:
         pass
-
-
-def _elapsed_ms() -> int:
-    return int((time.perf_counter() - _T_START) * 1000)
 
 
 def load_config() -> dict:
@@ -1054,29 +1046,8 @@ def already_running() -> bool:
     return False
 
 
-def _system_timing_str() -> str:
-    """Seconds since last Windows boot and since current user's logon."""
-    parts = []
-    try:
-        boot_age = time.time() - psutil.boot_time()
-        parts.append(f"since boot={boot_age:.1f}s")
-    except Exception:
-        pass
-    try:
-        me = os.environ.get("USERNAME", "").lower()
-        logon = next((u.started for u in psutil.users()
-                      if u.name.lower() == me), None)
-        if logon:
-            parts.append(f"since logon={time.time() - logon:.1f}s")
-    except Exception:
-        pass
-    return ", ".join(parts) if parts else "n/a"
-
-
 def main() -> None:
-    import_ms = int((_T_IMPORTS_DONE - _T_START) * 1000)
-    log(f"=== rclone_tray starting (pid {os.getpid()}) "
-        f"[{_system_timing_str()}; imports={import_ms}ms] ===")
+    log(f"=== rclone_tray starting (pid {os.getpid()}) ===")
     if already_running():
         log("another instance is running — exiting")
         return
@@ -1093,9 +1064,6 @@ def main() -> None:
         icon.menu = build_menu(icon)
         threading.Thread(target=menu_refresh_loop, args=(stop, icon),
                          daemon=True).start()
-
-        log(f"icon ready [{_system_timing_str()}; "
-            f"app startup={_elapsed_ms()}ms]")
         try:
             icon.run()
         finally:

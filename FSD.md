@@ -147,8 +147,13 @@ which handles password / passphrase obscuration.
   mounted in parallel daemon threads.
 - **FR-AUTO-2** Autostart preference is per-mount and persisted
   immediately on toggle.
-- **FR-AUTO-3** A Startup-folder shortcut launches `pythonw.exe
-  rclone_tray.pyw` at Windows login (created by `install.bat`).
+- **FR-AUTO-3** A per-user Scheduled Task `RcloneTray` (trigger:
+  *At log on*, principal: current user, run level: Limited) launches
+  `pythonw.exe rclone_tray.pyw` within seconds of every Windows
+  login. Registered by `install.bat` via PowerShell's
+  `Register-ScheduledTask` (no admin required). The Startup-folder
+  shortcut is intentionally *not* used because Windows throttles
+  Startup-folder items by ~2 minutes after logon.
 
 ### 5.3 Watchdog
 
@@ -218,9 +223,10 @@ which handles password / passphrase obscuration.
   data directory if none exists; users coming from an earlier layout
   copy their old `config.json` in manually. The application performs
   no automatic migration.
-- **FR-INST-4** Uninstall removes shortcuts and the program directory
-  but leaves the data directory in place; the user removes it
-  manually for a full wipe.
+- **FR-INST-4** Uninstall removes the Scheduled Task, the Desktop and
+  Startup-folder shortcuts (the latter for legacy installs), and the
+  program directory. The data directory is intentionally left in
+  place; the user removes it manually for a full wipe.
 
 ---
 

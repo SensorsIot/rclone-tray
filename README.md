@@ -57,7 +57,10 @@ install.bat
 1. `pip install --user pystray pillow psutil`
 2. Copies the program to `%LOCALAPPDATA%\Programs\rclone-tray\`
 3. Creates the data directory `%LOCALAPPDATA%\rclone-tray\`
-4. Creates **Desktop** + **Startup-folder** shortcuts (auto-launch at login)
+4. Creates a **Desktop** shortcut and registers a per-user **Scheduled
+   Task** `RcloneTray` (trigger: *At log on*) so the tray launches
+   within seconds of every login — without the multi-minute throttle
+   that affects Startup-folder items
 
 To remove: run `uninstall.bat` (also placed in the install dir).
 Your mount config in the data directory is kept — delete it
