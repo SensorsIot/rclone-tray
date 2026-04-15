@@ -6,6 +6,7 @@ import os
 import shutil
 import string
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -33,8 +34,35 @@ def _find_rclone() -> str:
 
 RCLONE_EXE = _find_rclone()
 SCRIPT_DIR = Path(__file__).parent
-CONFIG_FILE = SCRIPT_DIR / "config.json"
-LOG_FILE = SCRIPT_DIR / "rclone_tray.log"
+
+# Per-Windows-11 convention: program files in %LOCALAPPDATA%\Programs\<app>,
+# user data in %LOCALAPPDATA%\<app>.
+APPDATA_LOCAL = Path(os.environ.get("LOCALAPPDATA",
+                                    str(Path.home() / "AppData" / "Local")))
+DATA_DIR = APPDATA_LOCAL / "rclone-tray"
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+CONFIG_FILE = DATA_DIR / "config.json"
+LOG_FILE = DATA_DIR / "rclone_tray.log"
+
+
+def _migrate_legacy_config() -> None:
+    """One-time copy of config.json from older script-dir-based layouts."""
+    if CONFIG_FILE.exists():
+        return
+    legacy_candidates = [
+        SCRIPT_DIR / "config.json",
+        Path.home() / "rclone-mounts" / "config.json",
+    ]
+    for src in legacy_candidates:
+        if src.exists() and src.resolve() != CONFIG_FILE.resolve():
+            try:
+                shutil.copy2(src, CONFIG_FILE)
+            except OSError:
+                pass
+            return
+
+
+_migrate_legacy_config()
 
 WATCHDOG_INTERVAL = 30
 MENU_REFRESH_INTERVAL = 2
@@ -411,8 +439,8 @@ def build_menu(icon: Icon) -> Menu:
     items.append(Menu.SEPARATOR)
     items.append(MenuItem("Manage mounts...",
                           lambda _i, _it: open_manager(icon)))
-    items.append(MenuItem("Open log folder",
-                          lambda _i, _it: os.startfile(SCRIPT_DIR)))
+    items.append(MenuItem("Open data folder",
+                          lambda _i, _it: os.startfile(DATA_DIR)))
     items.append(MenuItem("Quit (leave mounts up)",
                           lambda _i, _it: icon.stop()))
     items.append(MenuItem("Quit + unmount all",

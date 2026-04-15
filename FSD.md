@@ -8,7 +8,9 @@
 | **Platform** | Windows 10 / 11 (x64) |
 | **Runtime** | Python 3.11+, `pythonw.exe` (no console) |
 | **External deps** | rclone, WinFsp, `pystray`, `pillow`, `psutil` |
-| **State files** | `config.json`, `rclone_tray.log`, `%TEMP%\rclone_tray.lock` |
+| **Install location** | `%LOCALAPPDATA%\Programs\rclone-tray\` (per-user, no admin) |
+| **Data location** | `%LOCALAPPDATA%\rclone-tray\` (`config.json`, `rclone_tray.log`) |
+| **Lock file** | `%TEMP%\rclone_tray.lock` |
 
 ---
 
@@ -200,8 +202,25 @@ which handles password / passphrase obscuration.
 ### 5.7 Logging
 
 - **FR-LOG-1** Every mount, unmount, remount, watchdog action, save,
-  delete, and unhandled exception is appended to `rclone_tray.log`
-  with an ISO-style timestamp.
+  delete, and unhandled exception is appended to
+  `%LOCALAPPDATA%\rclone-tray\rclone_tray.log` with an ISO-style
+  timestamp.
+
+### 5.8 Install / data layout (Windows 11 conventions)
+
+- **FR-INST-1** Program files (the `.pyw`, README, LICENSE, FSD,
+  uninstall.bat) are copied by `install.bat` to
+  `%LOCALAPPDATA%\Programs\rclone-tray\`.
+- **FR-INST-2** Runtime data (`config.json`, `rclone_tray.log`) lives
+  in a separate directory `%LOCALAPPDATA%\rclone-tray\`, created on
+  first launch.
+- **FR-INST-3** On first launch, if `%LOCALAPPDATA%\rclone-tray\
+  config.json` does not exist but a legacy `config.json` is found
+  next to the script or under `~\rclone-mounts\`, it is copied (not
+  moved) into the new data directory.
+- **FR-INST-4** Uninstall removes shortcuts and the program directory
+  but leaves the data directory in place; the user removes it
+  manually for a full wipe.
 
 ---
 

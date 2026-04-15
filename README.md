@@ -52,11 +52,16 @@ cd rclone-tray
 install.bat
 ```
 
-`install.bat` does three things:
+`install.bat` does four things:
 
 1. `pip install --user pystray pillow psutil`
-2. Creates a **Desktop** shortcut → `Rclone Tray.lnk`
-3. Creates a **Startup-folder** shortcut so the tray launches at every login
+2. Copies the program to `%LOCALAPPDATA%\Programs\rclone-tray\`
+3. Creates the data directory `%LOCALAPPDATA%\rclone-tray\`
+4. Creates **Desktop** + **Startup-folder** shortcuts (auto-launch at login)
+
+To remove: run `uninstall.bat` (also placed in the install dir).
+Your mount config in the data directory is kept — delete it
+manually if you want a full wipe.
 
 ---
 
@@ -91,9 +96,10 @@ install.bat
 | File | Purpose |
 |------|---------|
 | `rclone_tray.pyw` | The application |
-| `install.bat` | One-shot setup (deps + shortcuts) |
-| `config.json` | Generated. Mounts, autostart toggles, last window position |
-| `rclone_tray.log` | Generated. Activity / errors |
+| `install.bat` | Installer (copies to `%LOCALAPPDATA%\Programs\rclone-tray\`, creates shortcuts) |
+| `uninstall.bat` | Removes program + shortcuts (keeps your data) |
+| `%LOCALAPPDATA%\rclone-tray\config.json` | Generated. Mounts, autostart toggles, last window position |
+| `%LOCALAPPDATA%\rclone-tray\rclone_tray.log` | Generated. Activity / errors |
 | `FSD.md` | Functional spec |
 
 ---
