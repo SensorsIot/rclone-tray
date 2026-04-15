@@ -6,7 +6,6 @@ import os
 import shutil
 import string
 import subprocess
-import sys
 import tempfile
 import threading
 import time
@@ -43,26 +42,6 @@ DATA_DIR = APPDATA_LOCAL / "rclone-tray"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 CONFIG_FILE = DATA_DIR / "config.json"
 LOG_FILE = DATA_DIR / "rclone_tray.log"
-
-
-def _migrate_legacy_config() -> None:
-    """One-time copy of config.json from older script-dir-based layouts."""
-    if CONFIG_FILE.exists():
-        return
-    legacy_candidates = [
-        SCRIPT_DIR / "config.json",
-        Path.home() / "rclone-mounts" / "config.json",
-    ]
-    for src in legacy_candidates:
-        if src.exists() and src.resolve() != CONFIG_FILE.resolve():
-            try:
-                shutil.copy2(src, CONFIG_FILE)
-            except OSError:
-                pass
-            return
-
-
-_migrate_legacy_config()
 
 WATCHDOG_INTERVAL = 30
 MENU_REFRESH_INTERVAL = 2

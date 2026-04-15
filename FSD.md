@@ -214,10 +214,10 @@ which handles password / passphrase obscuration.
 - **FR-INST-2** Runtime data (`config.json`, `rclone_tray.log`) lives
   in a separate directory `%LOCALAPPDATA%\rclone-tray\`, created on
   first launch.
-- **FR-INST-3** On first launch, if `%LOCALAPPDATA%\rclone-tray\
-  config.json` does not exist but a legacy `config.json` is found
-  next to the script or under `~\rclone-mounts\`, it is copied (not
-  moved) into the new data directory.
+- **FR-INST-3** First launch creates an empty `config.json` in the
+  data directory if none exists; users coming from an earlier layout
+  copy their old `config.json` in manually. The application performs
+  no automatic migration.
 - **FR-INST-4** Uninstall removes shortcuts and the program directory
   but leaves the data directory in place; the user removes it
   manually for a full wipe.
