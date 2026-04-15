@@ -9,6 +9,9 @@ set "DESKTOP=%USERPROFILE%\Desktop"
 echo Stopping any running tray instance...
 taskkill /F /IM pythonw.exe >nul 2>&1
 
+echo Removing Scheduled Task...
+powershell -NoProfile -Command "Unregister-ScheduledTask -TaskName 'RcloneTray' -Confirm:$false -ErrorAction SilentlyContinue"
+
 echo Removing shortcuts...
 if exist "%DESKTOP%\Rclone Tray.lnk" del "%DESKTOP%\Rclone Tray.lnk"
 if exist "%STARTUP%\Rclone Tray.lnk" del "%STARTUP%\Rclone Tray.lnk"

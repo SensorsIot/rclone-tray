@@ -34,18 +34,8 @@ echo === Ensuring data directory %DATA_DIR% ===
 if not exist "%DATA_DIR%" mkdir "%DATA_DIR%"
 
 echo.
-echo === Creating shortcuts ===
+echo === Creating Desktop shortcut ===
 set "TARGET=%INSTALL_DIR%\rclone_tray.pyw"
-
-powershell -NoProfile -Command ^
-  "$s = New-Object -ComObject WScript.Shell;" ^
-  "$lnk = $s.CreateShortcut('%STARTUP%\Rclone Tray.lnk');" ^
-  "$lnk.TargetPath = '%PYW%';" ^
-  "$lnk.Arguments = '\"%TARGET%\"';" ^
-  "$lnk.WorkingDirectory = '%INSTALL_DIR%';" ^
-  "$lnk.WindowStyle = 7;" ^
-  "$lnk.Save()"
-if errorlevel 1 goto :err
 
 powershell -NoProfile -Command ^
   "$s = New-Object -ComObject WScript.Shell;" ^
@@ -58,11 +48,28 @@ powershell -NoProfile -Command ^
 if errorlevel 1 goto :err
 
 echo.
-echo Installed.
-echo   Program : %INSTALL_DIR%
-echo   Data    : %DATA_DIR%
+echo === Removing legacy Startup-folder shortcut (if present) ===
+if exist "%STARTUP%\Rclone Tray.lnk" del "%STARTUP%\Rclone Tray.lnk"
+
 echo.
-echo Launch "Rclone Tray" from the Desktop. The app will autostart at next login.
+echo === Registering Scheduled Task "RcloneTray" (trigger: At log on) ===
+powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+  "$user = \"$env:USERDOMAIN\$env:USERNAME\";" ^
+  "$action = New-ScheduledTaskAction -Execute '%PYW%' -Argument '\"%TARGET%\"' -WorkingDirectory '%INSTALL_DIR%';" ^
+  "$trigger = New-ScheduledTaskTrigger -AtLogOn -User $user;" ^
+  "$principal = New-ScheduledTaskPrincipal -UserId $user -LogonType Interactive -RunLevel Limited;" ^
+  "$settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable;" ^
+  "Register-ScheduledTask -TaskName 'RcloneTray' -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Force | Out-Null"
+if errorlevel 1 goto :err
+
+echo.
+echo Installed.
+echo   Program        : %INSTALL_DIR%
+echo   Data           : %DATA_DIR%
+echo   Autostart task : RcloneTray  (Task Scheduler -> Task Scheduler Library)
+echo.
+echo Launch "Rclone Tray" from the Desktop. The app will autostart at next login
+echo via the Scheduled Task (no Startup-folder throttle).
 exit /b 0
 
 :err
