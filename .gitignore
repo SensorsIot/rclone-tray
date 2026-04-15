@@ -1,0 +1,25 @@
+config.json
+*.log
+*.lock
+sshfs-win-manager-backup-vuex.json
+
+# debug / one-off helpers, not part of the project
+inspect_lnk.ps1
+find_sshfs.ps1
+remove_sshfs.ps1
+check_drives.py
+mount-*.cmd
+
+# agent / Claude artefacts
+.claude/
+agents/
+CLAUDE.md
+.cursor/
+.cursorrules
+.aider*
+.windsurfrules
+
+# python
+__pycache__/
+*.pyc
+*.pyo
